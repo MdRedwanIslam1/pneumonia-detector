@@ -9,8 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HOME=/home/user \
     MODEL_PATH=/home/user/app/models/densenet121_advanced_best.keras \
     PREDICTION_THRESHOLD=0.5 \
-    INTERNAL_API_PORT=8000 \
-    PORT=7860
+    INTERNAL_API_PORT=8000
 
 # libgomp is needed by TensorFlow; tini forwards shutdown signals correctly.
 RUN apt-get update \
@@ -42,8 +41,6 @@ COPY --chown=1000:1000 scripts/start_deployment.sh ./scripts/start_deployment.sh
 RUN chmod +x ./scripts/start_deployment.sh
 
 USER user
-
-EXPOSE 7860
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD python -c "import os, urllib.request; port=os.environ.get('PORT', '7860'); urllib.request.urlopen(f'http://127.0.0.1:{port}/_stcore/health', timeout=4).read()"

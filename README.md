@@ -7,6 +7,14 @@ This project will classify chest X-ray images as `NORMAL` or `PNEUMONIA` using
 TensorFlow/Keras. It starts with a small CNN and later adds transfer learning,
 careful medical-model evaluation, Grad-CAM, an API, a frontend, and deployment.
 
+## Live demo
+
+[Open the deployed Railway application](https://pneumonia-detector-production-649a.up.railway.app/)
+
+The public demo runs the Streamlit interface and the FastAPI inference service
+inside one cloud container. The educational-use disclaimer remains visible in
+the interface and every prediction response.
+
 ## Project location
 
 The complete project is stored at:
@@ -336,6 +344,10 @@ runs both applications in one container: FastAPI listens privately on port 8000,
 and Streamlit listens on the public `PORT` supplied by the host. The startup
 script waits for the model API to become healthy before opening the interface.
 
+The live Railway deployment was verified end to end with a held-out normal
+X-ray: the public interface returned `NORMAL` with 67.6% confidence and rendered
+the Grad-CAM overlay.
+
 The deployment image contains only runtime code and the selected 28.8 MB model.
 The dataset, notebooks, generated plots, virtual environments, and unused model
 checkpoints are excluded. The tested image is approximately 575 MB and used
@@ -381,6 +393,9 @@ Do not put passwords or API keys in source files. If a future version needs a
 secret, store it in the provider's Variables or Secrets dashboard. Check the
 deployment logs after each release and visit `/_stcore/health` to verify uptime.
 Free or sleeping services may take longer on their first request after inactivity.
+If a Railway domain returns `502 Application failed to respond`, open the deploy
+logs, find Streamlit's `Local URL` port, and set the domain's Target Port to the
+same value. The first verified deployment used Railway's injected port `8080`.
 
 The current model file is already small enough for the recommended hosts.
 Post-training quantization and LiteRT remain useful future optimizations if a
