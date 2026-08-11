@@ -401,3 +401,60 @@ The current model file is already small enough for the recommended hosts.
 Post-training quantization and LiteRT remain useful future optimizations if a
 strict 512 MB service or a much smaller image becomes necessary; any converted
 model must be reevaluated against the full Phase 7 test set before release.
+
+## Phase 12: MLOps polish
+
+MLOps applies ordinary software-engineering discipline to machine-learning
+work. In this project, MLflow acts as an experiment notebook: one run contains
+the model settings (parameters), performance numbers (metrics), and result files
+(artifacts). The tracking database and artifacts remain under `mlruns/` on the D
+drive and are intentionally excluded from Git and Docker builds.
+
+Install the development-only tools and import the completed Phase 4-7 results:
+
+```bash
+source scripts/activate_wsl.sh
+pip install -r requirements-mlops.txt
+python -m src.track_experiments
+```
+
+The importer uses a fingerprint of each summary to avoid duplicate rows. It
+records JSON summaries, history tables, and plots, but not model checkpoints.
+Start the local comparison dashboard with:
+
+```bash
+bash scripts/start_mlflow.sh
+```
+
+Open `http://localhost:5000`, select `pneumonia-detection`, and compare the four
+runs. Stop the server with `Ctrl+C`.
+
+The workflow at `.github/workflows/ci.yml` is continuous integration (CI).
+After every push or pull request to `main`, GitHub automatically:
+
+1. checks Python syntax and runs the focused tests; and
+2. rebuilds `Dockerfile.deploy` without publishing the image.
+
+This catches broken code or container instructions before they reach the live
+demo. The Docker layers are cached between workflow runs to reduce build time.
+You can run the same focused tests locally with:
+
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q tests
+```
+
+### Model drift in production
+
+Model drift means the images reaching the deployed system gradually become
+different from the images used for training. A new hospital, X-ray machine,
+image-processing protocol, patient population, or disease pattern can cause
+this. The API may remain technically healthy while its medical performance
+gets worse.
+
+A real monitored system would record privacy-safe input statistics such as
+image dimensions and brightness, watch prediction-score distributions, and
+compare them with the training reference. When clinicians later provide
+verified labels, sensitivity, specificity, and false-negative counts should be
+recomputed regularly. Large changes should create an alert and trigger review,
+not automatic medical decisions or automatic retraining. Patient images and
+identifying information must never be placed in ordinary application logs.

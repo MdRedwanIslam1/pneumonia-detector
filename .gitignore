@@ -23,6 +23,8 @@ models/*
 # Generated output
 outputs/
 logs/
+mlruns/
+.pytest_cache/
 
 # Notebook, editor, and operating-system files
 .ipynb_checkpoints/

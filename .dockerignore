@@ -12,8 +12,14 @@ venv
 data
 outputs
 logs
+mlruns
 notebooks
 *.ipynb
+
+# Development-only files are checked before the container build.
+.github
+tests
+requirements-mlops.txt
 
 # Only the selected deployment model belongs in the build context
 models/*
