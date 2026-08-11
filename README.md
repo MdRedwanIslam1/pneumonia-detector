@@ -440,6 +440,7 @@ demo. The Docker layers are cached between workflow runs to reduce build time.
 You can run the same focused tests locally with:
 
 ```bash
+pip install -r requirements-test.txt
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q tests
 ```
 
