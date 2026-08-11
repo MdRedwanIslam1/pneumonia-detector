@@ -1,0 +1,29 @@
+# Source-control and Python environment files
+.git
+.gitignore
+.venv
+venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.mypy_cache
+
+# Large local data and generated artifacts
+data
+outputs
+logs
+notebooks
+*.ipynb
+
+# Only the selected deployment model belongs in the build context
+models/*
+!models/densenet121_advanced_best.keras
+
+# Local secrets and editor files
+.env
+kaggle.json
+.kaggle
+.vscode
+.idea
+.DS_Store
+Thumbs.db

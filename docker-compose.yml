@@ -1,0 +1,31 @@
+name: pneumonia-detector
+
+services:
+  api:
+    image: pneumonia-detector-api:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    environment:
+      MODEL_PATH: /app/models/densenet121_advanced_best.keras
+      PREDICTION_THRESHOLD: "0.5"
+    ports:
+      # Windows reserves host port 8000 on this laptop; the container stays on 8000.
+      - "8080:8000"
+    stop_grace_period: 30s
+
+  frontend:
+    image: pneumonia-detector-frontend:local
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    init: true
+    environment:
+      API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    stop_grace_period: 15s

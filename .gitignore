@@ -1,0 +1,33 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Project-specific virtual environment
+.venv/
+venv/
+
+# Secrets and local settings
+.env
+kaggle.json
+.kaggle/
+
+# Dataset files are large and should not be committed to Git
+data/*
+!data/.gitkeep
+
+# Trained models can be large and are reproducible
+models/*
+!models/.gitkeep
+!models/densenet121_advanced_best.keras
+
+# Generated output
+outputs/
+logs/
+
+# Notebook, editor, and operating-system files
+.ipynb_checkpoints/
+.matplotlib/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

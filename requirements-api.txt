@@ -1,0 +1,8 @@
+# Versions match the environment used to save and verify the selected model.
+tensorflow-cpu==2.21.0
+numpy==2.5.1
+matplotlib==3.11.1
+pillow==12.3.0
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+python-multipart==0.0.32

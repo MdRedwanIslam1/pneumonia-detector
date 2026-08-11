@@ -1,0 +1,16 @@
+tensorflow; platform_system == "Windows"
+tensorflow[and-cuda]; platform_system == "Linux"
+numpy
+pandas
+matplotlib
+seaborn
+scikit-learn
+opencv-python
+pillow
+kaggle
+kagglehub
+fastapi
+uvicorn[standard]
+python-multipart
+streamlit
+requests
