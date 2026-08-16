@@ -1,461 +1,415 @@
-# Pneumonia Detector
+# Pneumonia Detection System
 
+[![CI](https://github.com/MdRedwanIslam1/pneumonia-detector/actions/workflows/ci.yml/badge.svg)](https://github.com/MdRedwanIslam1/pneumonia-detector/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![TensorFlow](https://img.shields.io/badge/TensorFlow-2.21-FF6F00?logo=tensorflow&logoColor=white)
+![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)
+![Docker](https://img.shields.io/badge/Deployment-Docker-2496ED?logo=docker&logoColor=white)
+
+> [!WARNING]
 > **Medical disclaimer:** This is an educational/portfolio project, not a
 > certified diagnostic tool. It must not be used for real medical decisions.
 
-This project will classify chest X-ray images as `NORMAL` or `PNEUMONIA` using
-TensorFlow/Keras. It starts with a small CNN and later adds transfer learning,
-careful medical-model evaluation, Grad-CAM, an API, a frontend, and deployment.
+An end-to-end binary image-classification project that predicts `NORMAL` or
+`PNEUMONIA` from a chest X-ray. The repository covers data validation,
+preprocessing, a CNN baseline, DenseNet121 transfer learning, Grad-CAM,
+medical-model evaluation, FastAPI, Streamlit, Docker, Railway deployment,
+MLflow experiment tracking, and continuous integration.
 
-## Live demo
+**[Open the live demo](https://pneumonia-detector-production-649a.up.railway.app/)**
+| **[View CI runs](https://github.com/MdRedwanIslam1/pneumonia-detector/actions)**
+| **[Read the portfolio notes](docs/PORTFOLIO.md)**
 
-[Open the deployed Railway application](https://pneumonia-detector-production-649a.up.railway.app/)
+![Live Streamlit application](docs/assets/live_demo.jpg)
 
-The public demo runs the Streamlit interface and the FastAPI inference service
-inside one cloud container. The educational-use disclaimer remains visible in
-the interface and every prediction response.
+The demo accepts JPEG or PNG images and can return a Grad-CAM overlay. It is a
+technical demonstration only, not a screening or diagnosis service.
 
-## Project location
+## Project Summary
 
-The complete project is stored at:
+The project asks a binary classification question: given one chest X-ray,
+which of two dataset labels is more likely, `NORMAL` or `PNEUMONIA`? A
+from-scratch CNN establishes a baseline. A pretrained DenseNet121 then reuses
+general visual features learned from ImageNet and trains a new binary
+classification head for this dataset.
 
-```text
-D:\MLProjects\pneumonia-detector
+The selected model prioritizes sensitivity and misses very few pneumonia
+examples, but it produces many false positives. Reporting that limitation is
+as important as reporting its strongest metric.
+
+### Final held-out test results
+
+The following values come from the untouched Kaggle test split of 624 images
+using the predefined `0.5` decision threshold.
+
+| Metric | Result | What it means here |
+| --- | ---: | --- |
+| Accuracy | 79.33% | Overall fraction classified correctly |
+| Precision | 75.44% | Fraction of pneumonia predictions that were correct |
+| Recall / sensitivity | **99.23%** | Detected 387 of 390 pneumonia images |
+| Specificity | 46.15% | Correctly rejected 108 of 234 normal images |
+| F1-score | 85.71% | Balance between precision and recall |
+| ROC-AUC | **95.72%** | Ranking quality across all possible thresholds |
+
+| Confusion matrix | ROC curve |
+| :---: | :---: |
+| ![Confusion matrix with 108 true negatives, 126 false positives, 3 false negatives, and 387 true positives](docs/assets/confusion_matrix.png) | ![ROC curve with an area under the curve of 0.9572](docs/assets/roc_curve.png) |
+
+At threshold `0.5`, the model produced 108 true negatives, 126 false
+positives, 3 false negatives, and 387 true positives. The 99.23% sensitivity
+is encouraging for this experiment, while the 46.15% specificity is far too
+low for clinical use. A future threshold must be selected on validation data,
+then assessed on a fresh holdout or external dataset.
+
+### Model comparison
+
+| Model | Validation accuracy | Precision | Recall | Loss |
+| --- | ---: | ---: | ---: | ---: |
+| Baseline CNN | 88.63% | **98.24%** | 86.23% | 0.2381 |
+| DenseNet121, frozen | **96.66%** | 97.56% | **97.94%** | **0.0956** |
+| DenseNet121, fine-tuned | 95.32% | **99.46%** | 94.21% | 0.1377 |
+| Focal-loss candidate | 94.65% | 99.45% | 93.31% | 0.1677 BCE comparison |
+
+The frozen DenseNet121 checkpoint was retained because it had the strongest
+combination of validation loss, accuracy, and recall. Fine-tuning and focal
+loss were evaluated rather than assumed to be improvements.
+
+![DenseNet121 frozen and fine-tuning learning curves](docs/assets/densenet121_training_curves.png)
+
+## Dataset
+
+The project uses Paul Mooney's
+[Chest X-Ray Images (Pneumonia)](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia)
+dataset from Kaggle.
+
+| Split supplied by dataset | Normal | Pneumonia | Total |
+| --- | ---: | ---: | ---: |
+| Train | 1,341 | 3,875 | 5,216 |
+| Validation | 8 | 8 | 16 |
+| Test | 234 | 390 | 624 |
+| **Total** | **1,583** | **4,273** | **5,856** |
+
+There are about 2.70 pneumonia images for every normal image. To reduce bias
+toward the majority class, training uses balanced class weights. The supplied
+validation folder contains only 16 images, so the original train and validation
+folders are combined and split again with a reproducible, stratified 80/20
+development split:
+
+| Working split | Normal | Pneumonia | Total |
+| --- | ---: | ---: | ---: |
+| Train | 1,079 | 3,106 | 4,185 |
+| Validation | 270 | 777 | 1,047 |
+| Untouched test | 234 | 390 | 624 |
+
+The exploration script checked all 5,856 files: none were corrupted, all were
+JPEG images, and their varying sizes were normalized by preprocessing. The
+dataset itself is excluded from Git.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A["Chest X-ray<br/>JPEG or PNG"] --> B["Validate file<br/>type, size, contents"]
+    B --> C["Convert to RGB<br/>resize to 224 x 224<br/>scale pixels to 0-1"]
+    C --> D["ImageNet<br/>channel normalization"]
+    D --> E["Frozen DenseNet121<br/>feature extractor"]
+    E --> F["Global average pooling"]
+    F --> G["Dense 128 + ReLU"]
+    G --> H["Dropout 40%"]
+    H --> I["Sigmoid<br/>pneumonia probability"]
+    I --> J["Threshold 0.5<br/>class + confidence"]
+    E --> K["Grad-CAM<br/>influence map"]
+    J --> L["FastAPI response"]
+    K --> L
+    L --> M["Streamlit interface"]
 ```
 
-## Local setup
+The preprocessing code converts grayscale and RGB files into the same
+three-channel shape, resizes them to `224 x 224`, and scales pixel values to
+`0-1`. During training only, conservative rotation, zoom, brightness changes,
+and horizontal flips add variation. Vertical flips and severe distortions are
+excluded because they create anatomically unrealistic images.
 
-### GPU setup with WSL2
+DenseNet121 acts as the feature extractor. Its output is summarized by global
+average pooling and passed through a small classification head. The sigmoid
+output is a number between 0 and 1 interpreted as pneumonia probability. The
+API applies a fixed threshold to produce the displayed class.
 
-Open PowerShell and start Ubuntu:
+Grad-CAM highlights image regions that influenced a prediction. It is useful
+for debugging model attention, but it neither proves that the model found
+pneumonia nor provides a clinical explanation.
+
+## Technology Stack
+
+| Area | Tools |
+| --- | --- |
+| Machine learning | TensorFlow/Keras, DenseNet121, NumPy, scikit-learn |
+| Image processing | Pillow, OpenCV, TensorFlow image operations |
+| Analysis | pandas, Matplotlib, Seaborn |
+| Explainability | Grad-CAM |
+| Inference | FastAPI, Uvicorn, Pydantic |
+| User interface | Streamlit |
+| Packaging and hosting | Docker, Docker Compose, Railway |
+| MLOps | MLflow, pytest, GitHub Actions |
+
+## Quick Start
+
+### Option 1: use the live demo
+
+Open the [Railway application](https://pneumonia-detector-production-649a.up.railway.app/),
+upload a JPEG or PNG, and select **Analyze X-ray**. A sleeping cloud container
+may need extra time for its first request.
+
+Do not upload real patient data or use the result for a medical decision.
+
+### Option 2: run with Docker
+
+Docker is the easiest reproducible local path because it packages Python and
+all runtime dependencies with the application.
+
+```bash
+git clone https://github.com/MdRedwanIslam1/pneumonia-detector.git
+cd pneumonia-detector
+docker compose up --build
+```
+
+After both services become healthy, open:
+
+- Streamlit interface: `http://localhost:8501`
+- FastAPI documentation: `http://localhost:8080/docs`
+- FastAPI health check: `http://localhost:8080/health`
+
+Stop the containers with `Ctrl+C`, followed by `docker compose down`.
+
+### Option 3: run from the existing WSL environment
+
+This project is stored locally at `D:\MLProjects\pneumonia-detector`. Open
+Ubuntu from PowerShell:
 
 ```powershell
 wsl -d Ubuntu-ML
 ```
 
-Then activate the GPU-enabled Linux environment:
-
-```bash
-source /mnt/d/MLProjects/pneumonia-detector/scripts/activate_wsl.sh
-python -m src.train
-```
-
-### Windows CPU environment
-
-Open PowerShell and run:
-
-```powershell
-cd D:\MLProjects\pneumonia-detector
-.\.venv\Scripts\Activate.ps1
-python -m src.train
-```
-
-Phase 1 creates the environment and starter structure. Dataset preparation
-begins in Phase 2.
-
-## Phase 2: dataset exploration
-
-After downloading the Kaggle dataset, run:
-
-```bash
-source /mnt/d/MLProjects/pneumonia-detector/scripts/activate_wsl.sh
-python -m src.explore_data
-```
-
-The script checks every image and saves its reports under
-`outputs/data_exploration/`.
-
-The dataset can be downloaded to the project with KaggleHub:
-
-```bash
-python -c "import kagglehub; kagglehub.dataset_download('paultimothymooney/chest-xray-pneumonia', output_dir='data/raw')"
-```
-
-## Phase 3: preprocessing pipeline
-
-The reusable TensorFlow pipeline converts every image to RGB, resizes it to
-`224x224`, normalizes pixels to `0-1`, creates a stratified validation split,
-and calculates balanced class weights. Gentle augmentation is applied only to
-the training dataset.
-
-Verify the complete pipeline and generate an augmentation preview:
-
-```bash
-source /mnt/d/MLProjects/pneumonia-detector/scripts/activate_wsl.sh
-python -m src.verify_preprocessing
-```
-
-## Phase 4: baseline CNN
-
-The baseline is a four-block convolutional network trained from scratch. It is
-deliberately smaller than the transfer-learning model introduced in Phase 5.
-
-Train for ten epochs with the WSL GPU environment:
-
-```bash
-source /mnt/d/MLProjects/pneumonia-detector/scripts/activate_wsl.sh
-python -m src.train --epochs 10 --batch-size 32
-```
-
-The best model is saved under `models/`. Training history, validation metrics,
-and accuracy/loss curves are saved under `outputs/baseline_cnn/`.
-
-Current baseline result (best checkpoint at epoch 9): validation accuracy
-`88.63%`, precision `98.24%`, recall `86.23%`, and loss `0.2381`. These are
-validation results; the untouched test set is reserved for Phase 7.
-
-## Phase 5: DenseNet121 transfer learning
-
-The transfer model first trains a new classifier while its ImageNet-pretrained
-DenseNet121 base is frozen. It then fine-tunes the top 40 layers with a learning
-rate 100 times smaller.
-
-```bash
-source /mnt/d/MLProjects/pneumonia-detector/scripts/activate_wsl.sh
-python -m src.train_transfer \
-  --batch-size 16 \
-  --frozen-epochs 5 \
-  --fine-tune-epochs 5
-```
-
-The selected checkpoint and frozen/fine-tuned comparisons are saved under
-`models/` and `outputs/densenet121/`.
-
-### Current validation comparison
-
-| Model | Accuracy | Precision | Recall | Loss |
-| --- | ---: | ---: | ---: | ---: |
-| Baseline CNN | 88.63% | 98.24% | 86.23% | 0.2381 |
-| DenseNet121, frozen | **96.66%** | 97.56% | **97.94%** | **0.0956** |
-| DenseNet121, fine-tuned | 95.32% | **99.46%** | 94.21% | 0.1377 |
-
-The frozen DenseNet121 checkpoint is selected because it has the lowest
-validation loss, highest accuracy, and highest recall. Test-set evaluation is
-still reserved for Phase 7.
-
-## Phase 6: advanced training and Grad-CAM
-
-Advanced training continues from the selected DenseNet checkpoint using focal
-loss, early stopping, and automatic learning-rate reduction:
-
-```bash
-source /mnt/d/MLProjects/pneumonia-detector/scripts/activate_wsl.sh
-python -m src.train_advanced --batch-size 16 --max-epochs 12
-```
-
-Generate Grad-CAM explanations from validation images without touching the test
-set:
-
-```bash
-python -m src.gradcam --model-path models/densenet121_advanced_best.keras
-```
-
-Grad-CAM highlights regions that influenced a model prediction. It does not
-prove that the highlighted region is pneumonia and must not be treated as a
-clinical explanation.
-
-### Advanced-training outcome
-
-Early stopping ended focal-loss training after 8 of 12 possible epochs. The
-learning-rate scheduler reduced the rate from `1e-4` to `1.6e-7`. The focal
-candidate reached `94.65%` validation accuracy, `99.45%` precision, and
-`93.31%` recall, but its ordinary BCE loss (`0.1677`) was worse than the Phase 5
-checkpoint (`0.0956`). The Phase 5 frozen DenseNet is therefore retained as the
-final Phase 6 model.
-
-## Phase 7: rigorous test evaluation
-
-Run the final selected model once on the untouched test set at the predefined
-`0.5` decision threshold:
-
-```bash
-source /mnt/d/MLProjects/pneumonia-detector/scripts/activate_wsl.sh
-python -m src.evaluate
-```
-
-The command saves accuracy, precision, sensitivity, specificity, F1, ROC-AUC,
-a confusion matrix, an ROC curve, every test probability, and selected mistakes
-under `outputs/evaluation/`.
-
-### Final test results
-
-| Metric | Result |
-| --- | ---: |
-| Accuracy | 79.33% |
-| Precision | 75.44% |
-| Recall / sensitivity | **99.23%** |
-| Specificity | 46.15% |
-| F1-score | 85.71% |
-| ROC-AUC | **95.72%** |
-
-At the fixed `0.5` threshold, the confusion matrix contains 108 true negatives,
-126 false positives, 3 false negatives, and 387 true positives. The model
-missed only 3 of 390 pneumonia examples, but incorrectly flagged 126 of 234
-normal examples. Its strong ROC-AUC shows good overall ranking ability, while
-the poor specificity shows that the current decision threshold and probability
-calibration are not suitable for clinical use.
-
-The threshold was intentionally not tuned on the test set. Any future threshold
-selection or probability calibration must use validation data or a separate
-calibration set, followed by evaluation on a fresh holdout or external dataset.
-This result also shows why accuracy alone is not enough for imbalanced medical
-classification.
-
-## Phase 8: FastAPI inference service
-
-FastAPI exposes the selected model through an HTTP API. The model is loaded
-once when the server starts, and `POST /predict` accepts one JPEG or PNG image.
-The response contains the predicted class, confidence, pneumonia probability,
-threshold, disclaimer, and an optional Grad-CAM PNG data URL.
-
-Install the Phase 8 dependencies in the activated WSL environment:
-
-```bash
-python -m pip install fastapi "uvicorn[standard]" python-multipart
-```
-
-Start the API from the project root:
+Start FastAPI in the first Ubuntu terminal:
 
 ```bash
 source /mnt/d/MLProjects/pneumonia-detector/scripts/activate_wsl.sh
 python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
-Open `http://localhost:8000/docs` for the interactive API documentation, or
-test a file from a second WSL terminal:
+Start Streamlit in a second Ubuntu terminal:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/predict \
-  -F "file=@data/raw/chest_xray/test/NORMAL/IM-0001-0001.jpeg"
-```
-
-Requesting `/predict?include_gradcam=true` adds the explanatory overlay. Uploads
-are limited to 10 MB and must contain a valid JPEG or PNG image. Grad-CAM shows
-model influence only; it is not a medical explanation or diagnosis.
-
-## Phase 9: Streamlit frontend
-
-The Streamlit interface uploads a validated image to FastAPI and displays the
-source X-ray, predicted class, confidence, pneumonia probability, threshold,
-and optional Grad-CAM overlay. The browser-facing app does not load another
-copy of the TensorFlow model.
-
-Install the frontend dependency in the activated WSL environment:
-
-```bash
-python -m pip install streamlit
-```
-
-Run FastAPI in the first WSL terminal:
-
-```bash
-cd /mnt/d/MLProjects/pneumonia-detector
-source scripts/activate_wsl.sh
-python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
-```
-
-Run Streamlit in a second WSL terminal:
-
-```bash
-cd /mnt/d/MLProjects/pneumonia-detector
-source scripts/activate_wsl.sh
+source /mnt/d/MLProjects/pneumonia-detector/scripts/activate_wsl.sh
 python -m streamlit run frontend/streamlit_app.py \
   --server.address 0.0.0.0 \
   --server.port 8501
 ```
 
-Open `http://localhost:8501`. If Windows localhost forwarding is unavailable,
-run `hostname -I` in WSL and open `http://<WSL-IP>:8501` instead. The frontend
-uses `http://127.0.0.1:8000` for its API by default; set the `API_URL`
-environment variable when the API is hosted elsewhere.
+Open `http://localhost:8501`. If port 8000 is already occupied, stop the old
+API process before starting another one.
 
-## Phase 10: Docker containerization
+## API
 
-Docker Compose builds two separate runtime images. The `api` container includes
-TensorFlow, the selected model, and FastAPI. The smaller `frontend` container
-includes Streamlit and calls the API over Docker's private network at
-`http://api:8000`. Training data, generated outputs, virtual environments, and
-unused checkpoints are excluded from the build context.
-
-### Build and run
-
-Docker Desktop must be running with WSL integration enabled for `Ubuntu-ML`.
-From the project root in WSL, build both images:
+The model is loaded once during FastAPI startup, not once per request. Uploads
+are limited to 10 MB and must contain a valid JPEG or PNG.
 
 ```bash
-docker compose build
+curl -X POST "http://127.0.0.1:8000/predict?include_gradcam=false" \
+  -F "file=@data/raw/chest_xray/test/NORMAL/IM-0001-0001.jpeg"
 ```
 
-Start both containers and keep their combined logs visible:
+Example response from the verified deployment:
+
+```json
+{
+  "predicted_class": "NORMAL",
+  "confidence": 0.676,
+  "pneumonia_probability": 0.324,
+  "threshold": 0.5,
+  "gradcam_overlay": null,
+  "disclaimer": "Educational project only. This is not a certified diagnostic tool and must not be used for medical decisions."
+}
+```
+
+Set `include_gradcam=true` to receive the overlay as a PNG data URL.
+
+## Reproducing the ML Pipeline
+
+Install the complete development environment and obtain Kaggle API credentials
+before running these commands:
 
 ```bash
-docker compose up
+python -m pip install -r requirements.txt
+kaggle datasets download \
+  -d paultimothymooney/chest-xray-pneumonia \
+  -p data/raw \
+  --unzip
 ```
 
-When the `api` and `frontend` services report healthy, open:
-
-- Streamlit: `http://localhost:8501`
-- FastAPI docs: `http://localhost:8080/docs`
-
-Run the containers in the background instead when terminal logs are not needed:
+Run each stage from the repository root:
 
 ```bash
-docker compose up --detach
-docker compose ps
+# Inspect counts, formats, dimensions, corruption, and sample images.
+python -m src.explore_data
+
+# Verify resize, normalization, augmentation, splits, and class weights.
+python -m src.verify_preprocessing
+
+# Train the four-block baseline CNN.
+python -m src.train --epochs 10 --batch-size 32
+
+# Train the frozen head, then evaluate fine-tuning.
+python -m src.train_transfer \
+  --batch-size 16 \
+  --frozen-epochs 5 \
+  --fine-tune-epochs 5
+
+# Compare the focal-loss candidate with the selected checkpoint.
+python -m src.train_advanced --batch-size 16 --max-epochs 12
+
+# Generate validation-only Grad-CAM examples.
+python -m src.gradcam \
+  --model-path models/densenet121_advanced_best.keras
+
+# Evaluate once on the untouched test split.
+python -m src.evaluate
 ```
 
-Inspect service logs:
+Generated reports are written under `outputs/` and are excluded from Git.
+Model checkpoints are written under `models/`; only the selected deployment
+checkpoint is committed.
+
+## MLOps and Quality Checks
+
+MLflow imports the Phase 4-7 summaries into a local experiment database so the
+baseline, transfer-learning stages, advanced candidate, and held-out test run
+can be compared without relying on memory or filenames.
 
 ```bash
-docker compose logs --follow api
-docker compose logs --follow frontend
-```
-
-Stop and remove the containers and their private network. This does not delete
-the built images, source code, dataset, or model:
-
-```bash
-docker compose down
-```
-
-After changing code or dependencies, rebuild before starting:
-
-```bash
-docker compose up --build
-```
-
-### Common problems
-
-- `docker: command not found`: install Docker Desktop and enable its WSL
-  integration for `Ubuntu-ML`.
-- `Cannot connect to the Docker daemon`: start Docker Desktop and wait until its
-  engine reports that it is running.
-- `port is already allocated`: stop processes using host ports `8080` or `8501`,
-  then run Compose again. FastAPI still uses port `8000` inside Docker.
-- `api` remains unhealthy: model startup can take longer on CPU; inspect it with
-  `docker compose logs api`.
-- Build runs out of disk space: move Docker Desktop's disk image location to the
-  D drive and remove unused build cache from Docker Desktop when appropriate.
-
-## Phase 11: Cloud deployment
-
-Cloud platforms expose one public port per service. `Dockerfile.deploy` therefore
-runs both applications in one container: FastAPI listens privately on port 8000,
-and Streamlit listens on the public `PORT` supplied by the host. The startup
-script waits for the model API to become healthy before opening the interface.
-
-The live Railway deployment was verified end to end with a held-out normal
-X-ray: the public interface returned `NORMAL` with 67.6% confidence and rendered
-the Grad-CAM overlay.
-
-The deployment image contains only runtime code and the selected 28.8 MB model.
-The dataset, notebooks, generated plots, virtual environments, and unused model
-checkpoints are excluded. The tested image is approximately 575 MB and used
-about 955 MB during a Grad-CAM request under a 1 GB Docker memory limit.
-
-### Test the cloud image locally
-
-```bash
-docker build --file Dockerfile.deploy --tag pneumonia-detector-cloud:local .
-docker run --rm --memory 1g --cpus 2 \
-  --publish 8600:7860 \
-  pneumonia-detector-cloud:local
-```
-
-Open `http://localhost:8600`. Stop it with `Ctrl+C`.
-
-### Recommended hosting path
-
-Provider limits change over time. These choices were checked on August 12, 2026:
-
-- Railway is the easiest temporary no-card demo. Its new-account trial provides
-  $5 of credit for up to 30 days and permits 1 GB RAM. `railway.json` selects
-  `Dockerfile.deploy`, configures the health check, and allows graceful restarts.
-  Enable App Sleeping to avoid using credit while the demo is idle. The 512 MB
-  Free plan available after the trial is too small for this TensorFlow build.
-- Hugging Face Docker Spaces is the most comfortable portfolio host because CPU
-  Basic provides 2 vCPUs and 16 GB RAM with no hourly compute charge. Creating a
-  new Docker Space currently requires a $9/month PRO account. Use port 7860 and
-  deploy the contents of this repository with `Dockerfile.deploy` named
-  `Dockerfile` in the Space repository.
-- Render's Free web service has only 512 MB RAM, which is below the measured
-  requirement. Use a 2 GB instance or first migrate inference to a smaller
-  LiteRT/TensorFlow Lite runtime; do not expect this full image to work on Free.
-
-Railway automatically supplies `PORT`. Optional public configuration values are:
-
-```text
-PREDICTION_THRESHOLD=0.5
-MODEL_PATH=/home/user/app/models/densenet121_advanced_best.keras
-```
-
-Do not put passwords or API keys in source files. If a future version needs a
-secret, store it in the provider's Variables or Secrets dashboard. Check the
-deployment logs after each release and visit `/_stcore/health` to verify uptime.
-Free or sleeping services may take longer on their first request after inactivity.
-If a Railway domain returns `502 Application failed to respond`, open the deploy
-logs, find Streamlit's `Local URL` port, and set the domain's Target Port to the
-same value. The first verified deployment used Railway's injected port `8080`.
-
-The current model file is already small enough for the recommended hosts.
-Post-training quantization and LiteRT remain useful future optimizations if a
-strict 512 MB service or a much smaller image becomes necessary; any converted
-model must be reevaluated against the full Phase 7 test set before release.
-
-## Phase 12: MLOps polish
-
-MLOps applies ordinary software-engineering discipline to machine-learning
-work. In this project, MLflow acts as an experiment notebook: one run contains
-the model settings (parameters), performance numbers (metrics), and result files
-(artifacts). The tracking database and artifacts remain under `mlruns/` on the D
-drive and are intentionally excluded from Git and Docker builds.
-
-Install the development-only tools and import the completed Phase 4-7 results:
-
-```bash
-source scripts/activate_wsl.sh
 pip install -r requirements-mlops.txt
 python -m src.track_experiments
-```
-
-The importer uses a fingerprint of each summary to avoid duplicate rows. It
-records JSON summaries, history tables, and plots, but not model checkpoints.
-Start the local comparison dashboard with:
-
-```bash
 bash scripts/start_mlflow.sh
 ```
 
-Open `http://localhost:5000`, select `pneumonia-detection`, and compare the four
-runs. Stop the server with `Ctrl+C`.
+Open `http://localhost:5000`, select `pneumonia-detection`, and inspect the four
+runs. The local `mlruns/` directory is excluded from Git and Docker.
 
-The workflow at `.github/workflows/ci.yml` is continuous integration (CI).
-After every push or pull request to `main`, GitHub automatically:
-
-1. checks Python syntax and runs the focused tests; and
-2. rebuilds `Dockerfile.deploy` without publishing the image.
-
-This catches broken code or container instructions before they reach the live
-demo. The Docker layers are cached between workflow runs to reduce build time.
-You can run the same focused tests locally with:
+GitHub Actions runs focused tests, checks Python syntax, and performs a clean
+deployment-image build after every push or pull request to `main`. Run the
+focused tests locally with:
 
 ```bash
 pip install -r requirements-test.txt
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q tests
 ```
 
-### Model drift in production
+## Repository Structure
 
-Model drift means the images reaching the deployed system gradually become
-different from the images used for training. A new hospital, X-ray machine,
-image-processing protocol, patient population, or disease pattern can cause
-this. The API may remain technically healthy while its medical performance
-gets worse.
+```text
+pneumonia-detector/
+|-- api/
+|   `-- main.py                    # FastAPI endpoints and validation
+|-- data/                          # Kaggle data, ignored by Git
+|-- docs/
+|   |-- assets/                    # Portfolio-safe plots and screenshot
+|   `-- PORTFOLIO.md               # LinkedIn and interview notes
+|-- frontend/
+|   |-- Dockerfile
+|   `-- streamlit_app.py           # Browser interface
+|-- models/
+|   `-- densenet121_advanced_best.keras
+|-- scripts/
+|   |-- activate_wsl.sh
+|   |-- start_deployment.sh
+|   `-- start_mlflow.sh
+|-- src/
+|   |-- data_loader.py
+|   |-- evaluate.py
+|   |-- explore_data.py
+|   |-- gradcam.py
+|   |-- model.py
+|   |-- predict.py
+|   |-- preprocess.py
+|   |-- track_experiments.py
+|   |-- train.py
+|   |-- train_advanced.py
+|   `-- train_transfer.py
+|-- tests/
+|-- .github/workflows/ci.yml
+|-- Dockerfile.deploy
+|-- docker-compose.yml
+|-- railway.json
+`-- README.md
+```
 
-A real monitored system would record privacy-safe input statistics such as
-image dimensions and brightness, watch prediction-score distributions, and
-compare them with the training reference. When clinicians later provide
-verified labels, sensitivity, specificity, and false-negative counts should be
-recomputed regularly. Large changes should create an alert and trigger review,
-not automatic medical decisions or automatic retraining. Patient images and
-identifying information must never be placed in ordinary application logs.
+## Deployment
+
+`Dockerfile.deploy` packages the selected 28.8 MB checkpoint, API, and frontend
+into one non-root container. FastAPI listens on a private internal port while
+Streamlit listens on the public `PORT` supplied by Railway. The training
+dataset, virtual environments, experiment database, generated outputs, and
+unused checkpoints are excluded from the deployment image.
+
+Important environment variables:
+
+```text
+MODEL_PATH=/home/user/app/models/densenet121_advanced_best.keras
+PREDICTION_THRESHOLD=0.5
+```
+
+The deployment exposes health endpoints, validates uploads, limits file size,
+and returns the educational disclaimer with each prediction.
+
+## Limitations and Responsible Use
+
+- The model was trained and tested on one public retrospective dataset.
+- No independent hospital dataset or prospective clinical study was used.
+- Dataset labels may not represent a complete clinical diagnosis.
+- Specificity is only 46.15% at the current threshold, causing many false
+  positives.
+- The probability output has not undergone clinical calibration.
+- Grad-CAM is a debugging visualization, not proof of medically valid reasoning.
+- Performance may change with different hospitals, X-ray machines, image
+  processing, patient populations, or disease prevalence.
+- Real patient images, identifiers, and medical information must never be put
+  in ordinary demo logs or public repositories.
+
+Before any real-world medical study, this work would require external
+validation, subgroup analysis, calibration, privacy and security review,
+clinical oversight, regulatory review, and a carefully designed human-in-the-
+loop workflow.
+
+## Team Presentation Split
+
+| Member | Lead area | Key material |
+| --- | --- | --- |
+| Member 1 | Data and preprocessing | Dataset audit, imbalance, splitting, augmentation |
+| Member 2 | Modeling and evaluation | CNN, DenseNet121, Grad-CAM, medical metrics |
+| Member 3 | Application and MLOps | FastAPI, Streamlit, Docker, Railway, MLflow, CI |
+
+Replace the member labels with names before the faculty presentation. Each
+member should still be able to explain the whole system. A ready-to-use
+project pitch, LinkedIn post, and interview talking points are in
+[docs/PORTFOLIO.md](docs/PORTFOLIO.md).
+
+## Future Work
+
+- Select and calibrate the classification threshold using validation data.
+- Evaluate on an independent, clinically representative external dataset.
+- Add subgroup and image-quality analysis where suitable metadata is available.
+- Compare a small ensemble and a quantized LiteRT model.
+- Expand to a rigorously labeled multi-label dataset such as NIH
+  ChestX-ray14, with a redesigned evaluation protocol.
+- Add privacy-safe drift statistics and post-deployment performance monitoring.
+
+## References
+
+- [Chest X-Ray Images (Pneumonia) dataset](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia)
+- [Densely Connected Convolutional Networks](https://arxiv.org/abs/1608.06993)
+- [CheXNet: Radiologist-Level Pneumonia Detection on Chest X-Rays with Deep Learning](https://arxiv.org/abs/1711.05225)
+- [Grad-CAM: Visual Explanations from Deep Networks](https://arxiv.org/abs/1610.02391)
+
+> [!CAUTION]
+> **This is an educational/portfolio project, not a certified diagnostic tool.
+> It must not be used for real medical decisions.**

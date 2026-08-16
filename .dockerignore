@@ -10,6 +10,7 @@ venv
 
 # Large local data and generated artifacts
 data
+docs
 outputs
 logs
 mlruns
